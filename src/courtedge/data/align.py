@@ -64,9 +64,7 @@ def point_end_times(
     return pd.Series(times, index=points.index), method
 
 
-def score_timeline(
-    points: pd.DataFrame, end_times: pd.Series, fmt: MatchFormat
-) -> pd.DataFrame:
+def score_timeline(points: pd.DataFrame, end_times: pd.Series, fmt: MatchFormat) -> pd.DataFrame:
     """State of the match *after* each point, stamped with the time it became known.
 
     Rows: ``time_utc``, ``point_index`` and the score columns of the state after the

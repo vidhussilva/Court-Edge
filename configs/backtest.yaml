@@ -1,0 +1,26 @@
+# Phase 2 odds-only backtest. Every field maps to BacktestConfig / StakingConfig.
+# Thresholds and staking were fixed before looking at results; report every variant tried.
+backtest:
+  delay_s: 60            # broadcast delay: the model sees the score as of t - 60 s
+  threshold: 0.05        # bet when |model - market| > 5 percentage points
+  commission: null       # null = each market's recorded marketBaseRate (fallback 5%)
+  slippage_ticks: 1      # BASIC data has no order book: assume one tick worse than LTP
+  devig_method: multiplicative
+  min_gap_s: 300
+  max_bets: 10
+  min_odds: 1.05
+  max_odds: 20.0
+  trade_preplay: false
+  staking:
+    rule: flat           # flat | kelly
+    stake: 1.0
+    bankroll: 100.0
+    kelly_fraction: 0.25
+    kelly_cap: 0.02
+serve_model:
+  window_days: 364
+  prior_points: 400
+  surface_prior_points: 300
+bootstrap:
+  n: 1000
+  seed: 0

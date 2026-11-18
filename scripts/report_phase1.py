@@ -1,6 +1,6 @@
 """Generate reports/phase1.md: engine vs Monte Carlo grid, timings, match trace.
 
-    uv run python scripts/report_phase1.py            # ~10 s with the C++ extension, ~3 min without
+uv run python scripts/report_phase1.py            # ~10 s with the C++ extension, ~3 min without
 """
 
 from __future__ import annotations

@@ -145,9 +145,7 @@ def _add(x: SetOutcome, y: SetOutcome, wx: float = 1.0, wy: float = 1.0) -> SetO
 
 
 @lru_cache(maxsize=_CACHE_SIZE)
-def set_outcomes(
-    pa: float, pb: float, ga: int, gb: int, server: int, rule: SetRule
-) -> SetOutcome:
+def set_outcomes(pa: float, pb: float, ga: int, gb: int, server: int, rule: SetRule) -> SetOutcome:
     """Distribution of (set winner, next server) from the start of a game at (ga, gb)."""
     if rule.tiebreak_at is not None and ga == gb == rule.tiebreak_at:
         p = p_tiebreak(pa, pb, 0, 0, server, rule.tiebreak_points)
@@ -232,6 +230,24 @@ def _current_set_outcomes(state: ScoreState, pa: float, pb: float, fmt: MatchFor
     return g, total
 
 
+def validate(state: ScoreState, fmt: MatchFormat) -> None:
+    """Reject scores that cannot occur (they would make the recursions run away)."""
+    need = fmt.sets_to_win
+    ok = all(0 <= s < need for s in state.sets)
+    rule = fmt.set_rule(*state.sets)
+    a, b = state.points
+    if state.tiebreak:
+        ok &= rule.tiebreak_at is not None and state.games == (rule.tiebreak_at,) * 2
+        ok &= 0 <= a <= rule.tiebreak_points and 0 <= b <= rule.tiebreak_points
+    else:
+        ok &= 0 <= a <= 4 and 0 <= b <= 4 and not (a == 4 and b == 4) and abs(a - b) <= 4
+        if rule.tiebreak_at is not None:
+            ok &= max(state.games) <= rule.tiebreak_at and min(state.games) >= 0
+            ok &= not (state.games[0] == state.games[1] == rule.tiebreak_at)
+    if not ok:
+        raise ValueError(f"invalid score state for {fmt}: {state}")
+
+
 def win_probabilities(
     state: ScoreState, pa: float, pb: float, fmt: MatchFormat
 ) -> WinProbabilities:
@@ -239,6 +255,7 @@ def win_probabilities(
     if state.is_over:
         v = 1.0 if state.winner == 0 else 0.0
         return WinProbabilities(v, v, v)
+    validate(state, fmt)
     pa, pb = _clamp(pa), _clamp(pb)
     g, out = _current_set_outcomes(state, pa, pb, fmt)
     sa, sb = state.sets

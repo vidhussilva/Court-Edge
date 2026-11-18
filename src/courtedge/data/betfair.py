@@ -13,7 +13,11 @@ The output is long format, one row per (message time, runner), with prices
 forward-filled so every row shows the latest known price at that moment:
 
     market_id, event_id, event_name, market_time, timestamp_utc, selection_id,
-    runner_name, last_traded_price, in_play, market_status, runner_status
+    runner_name, last_traded_price, in_play, market_status, runner_status,
+    market_base_rate
+
+``market_base_rate`` is the commission rate (percent) Betfair recorded for the market;
+the backtester settles each market at that rate.
 
 ``runner_status`` is the *final* status (WINNER / LOSER / REMOVED) from the last
 market definition. It is settlement information, so it must never be used as a
@@ -36,7 +40,7 @@ import pandas as pd
 COLUMNS = [
     "market_id", "event_id", "event_name", "market_time", "timestamp_utc",
     "selection_id", "runner_name", "last_traded_price", "in_play", "market_status",
-    "runner_status",
+    "runner_status", "market_base_rate",
 ]  # fmt: skip
 
 TENNIS_EVENT_TYPE = "2"
@@ -50,9 +54,7 @@ def _iter_lines(raw: bytes) -> Iterator[dict]:
             yield json.loads(line)
 
 
-def parse_stream(
-    messages: Iterable[dict], market_type: str = "MATCH_ODDS"
-) -> pd.DataFrame:
+def parse_stream(messages: Iterable[dict], market_type: str = "MATCH_ODDS") -> pd.DataFrame:
     """Turn the ``mcm`` messages of one market into the long table described above."""
     definition: dict = {}
     market_id: str | None = None
@@ -90,6 +92,7 @@ def parse_stream(
                     market_id, definition.get("eventId"), definition.get("eventName"),
                     definition.get("marketTime"), pt, sel, r.get("name"),
                     prices.get(sel), in_play, status, r.get("status"),
+                    definition.get("marketBaseRate"),
                 )
             )  # fmt: skip
 
@@ -130,8 +133,7 @@ def _iter_market_blobs(root: Path) -> Iterator[tuple[str, bytes]]:
 def parse_path(root: str | Path, market_type: str = "MATCH_ODDS") -> pd.DataFrame:
     """Parse every market under a file, directory or ``.tar`` archive."""
     frames = [
-        parse_stream(_iter_lines(blob), market_type)
-        for _, blob in _iter_market_blobs(Path(root))
+        parse_stream(_iter_lines(blob), market_type) for _, blob in _iter_market_blobs(Path(root))
     ]
     frames = [f for f in frames if not f.empty]
     if not frames:
