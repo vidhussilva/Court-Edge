@@ -1,6 +1,8 @@
 #include <benchmark/benchmark.h>
 
 #include <random>
+#include <utility>
+#include <vector>
 
 #include "courtedge/backtest.hpp"
 
