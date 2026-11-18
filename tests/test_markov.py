@@ -161,3 +161,18 @@ def test_monte_carlo_quick():
     exact = win_probabilities(state, 0.64, 0.6, fmt)
     mc = simulate_win_probabilities(state, 0.64, 0.6, fmt, n=20_000, seed=5)
     assert exact.match == pytest.approx(mc.match, abs=0.015)
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        ScoreState(points=(4, 4)),
+        ScoreState(games=(7, 7)),
+        ScoreState(games=(6, 6)),  # a standard set at 6-6 must be in a tiebreak
+        ScoreState(games=(5, 5), tiebreak=True),
+        ScoreState(sets=(2, 0)),
+    ],
+)
+def test_invalid_states_are_rejected(state):
+    with pytest.raises(ValueError):
+        win_probabilities(state, 0.65, 0.62, MatchFormat(3))
