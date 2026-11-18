@@ -16,6 +16,7 @@ from __future__ import annotations
 import bz2
 import csv
 import json
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
+from courtedge.market.ticks import to_tick
 from courtedge.markov.score import MatchFormat, ScoreState, advance
 
 POINT_NAMES = ("0", "15", "30", "40", "AD")
@@ -129,8 +131,11 @@ def write_slam_files(
                 game_over = st.games != prev.games or st.sets != prev.sets or st.is_over
                 set_over = st.sets != prev.sets or st.is_over
                 if st.tiebreak or not game_over:
-                    sc = (str(st.points[0]), str(st.points[1])) if st.tiebreak else (
-                        POINT_NAMES[min(st.points[0], 4)], POINT_NAMES[min(st.points[1], 4)])
+                    sc = (
+                        (str(st.points[0]), str(st.points[1]))
+                        if st.tiebreak
+                        else (POINT_NAMES[min(st.points[0], 4)], POINT_NAMES[min(st.points[1], 4)])
+                    )
                 else:
                     sc = ("0", "0")
                 games = prev.games if set_over else st.games
@@ -223,21 +228,6 @@ def write_pbp_file(
 # Betfair BASIC stream files
 # ---------------------------------------------------------------------------
 
-# Betfair price ladder increments.
-_LADDER = [(2, 0.01), (3, 0.02), (4, 0.05), (6, 0.1), (10, 0.2), (20, 0.5), (30, 1),
-           (50, 2), (100, 5), (1000, 10)]  # fmt: skip
-
-
-def to_tick(price: float) -> float:
-    """Round a decimal price to the nearest valid Betfair tick (1.01 to 1000)."""
-    price = min(max(price, 1.01), 1000.0)
-    lo = 1.0
-    for hi, step in _LADDER:
-        if price <= hi:
-            return round(lo + round((price - lo) / step) * step, 2)
-        lo = hi
-    return 1000.0
-
 
 def write_betfair_market(
     path: Path,
@@ -325,11 +315,206 @@ def heuristic_prob_a(fmt: MatchFormat, base: float = 0.5) -> Callable[[ScoreStat
     def f(s: ScoreState) -> float:
         if s.is_over:
             return 1.0 if s.winner == 0 else 0.0
-        x = np.log(base / (1 - base)) + 1.2 * (s.sets[0] - s.sets[1]) + 0.25 * (
-            s.games[0] - s.games[1])
+        x = (
+            np.log(base / (1 - base))
+            + 1.2 * (s.sets[0] - s.sets[1])
+            + 0.25 * (s.games[0] - s.games[1])
+        )
         return float(1 / (1 + np.exp(-x)))
 
     return f
 
 
 UTC = UTC
+
+
+# ---------------------------------------------------------------------------
+# Sackmann tennis_atp
+# ---------------------------------------------------------------------------
+
+ATP_HEADER = [
+    "tourney_id", "tourney_name", "surface", "draw_size", "tourney_level", "tourney_date",
+    "match_num", "winner_id", "winner_seed", "winner_entry", "winner_name", "winner_hand",
+    "winner_ht", "winner_ioc", "winner_age", "loser_id", "loser_seed", "loser_entry",
+    "loser_name", "loser_hand", "loser_ht", "loser_ioc", "loser_age", "score", "best_of",
+    "round", "minutes", "w_ace", "w_df", "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon",
+    "w_SvGms", "w_bpSaved", "w_bpFaced", "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon",
+    "l_2ndWon", "l_SvGms", "l_bpSaved", "l_bpFaced", "winner_rank", "winner_rank_points",
+    "loser_rank", "loser_rank_points",
+]  # fmt: skip
+
+
+def serve_stats(m: SimulatedMatch, player: int) -> dict:
+    """Serve-point counts for one player, split into first/second serve like Sackmann."""
+    served = [i for i, s in enumerate(m.servers) if s == player]
+    svpt = len(served)
+    won = sum(m.winners[i] == player for i in served)
+    first_in = round(0.62 * svpt)
+    first_won = min(round(0.72 * won), first_in)
+    return dict(svpt=svpt, first_in=first_in, first_won=first_won, second_won=won - first_won,
+                aces=sum(m.aces[i] for i in served),
+                dfs=sum(m.double_faults[i] for i in served))  # fmt: skip
+
+
+def atp_row(m: SimulatedMatch, tourney: dict, match_num: int, rnd: str) -> list:
+    w, l_ = m.winner, 1 - m.winner
+    names = (m.player_a, m.player_b)
+    ws, ls = serve_stats(m, w), serve_stats(m, l_)
+    pid = lambda name: 100000 + zlib.crc32(name.encode()) % 10**5  # noqa: E731
+    return [
+        tourney["id"], tourney["name"], tourney["surface"], 32, tourney["level"],
+        tourney["date"].strftime("%Y%m%d"), match_num, pid(names[w]), "",
+        "", names[w], "R", "", "", "", pid(names[l_]), "", "", names[l_],
+        "R", "", "", "", score_string(m), m.fmt.best_of, rnd, round(m.duration_s / 60),
+        ws["aces"], ws["dfs"], ws["svpt"], ws["first_in"], ws["first_won"], ws["second_won"],
+        "", "", "", ls["aces"], ls["dfs"], ls["svpt"], ls["first_in"], ls["first_won"],
+        ls["second_won"], "", "", "", "", "", "", "",
+    ]  # fmt: skip
+
+
+# ---------------------------------------------------------------------------
+# Demo world: latent skills -> history, slam point-by-point and Betfair markets
+# ---------------------------------------------------------------------------
+
+_SYLLABLES = ["kar", "ven", "sol", "mir", "tad", "lun", "bor", "pex", "qui", "zan", "dov",
+              "rel", "fin", "gor", "hal", "jex"]  # fmt: skip
+_FIRST = ["Ari", "Bo", "Cyr", "Dax", "Eli", "Fen", "Gus", "Hal", "Ivo", "Jon", "Kai", "Leo"]
+SLAMS_2023 = {  # (start date, final-set rule in 2023)
+    "ausopen": datetime(2023, 1, 16), "frenchopen": datetime(2023, 5, 29),
+    "wimbledon": datetime(2023, 7, 3), "usopen": datetime(2023, 8, 28),
+}  # fmt: skip
+TOUR_SERVE, TOUR_RETURN = 0.635, 0.365
+SURFACE_SERVE_ADJ = {"Hard": 0.0, "Clay": -0.02, "Grass": 0.02}
+
+
+def _surface_for_week(d: datetime) -> str:
+    if d.month in (4, 5) or (d.month == 6 and d.day < 10):
+        return "Clay"
+    if (d.month == 6 and d.day >= 10) or (d.month == 7 and d.day < 15):
+        return "Grass"
+    return "Hard"
+
+
+@dataclass
+class DemoWorld:
+    names: list[str]
+    serve: np.ndarray
+    ret: np.ndarray
+
+    def p_serve(self, i: int, j: int, surface: str) -> float:
+        p = self.serve[i] - (self.ret[j] - TOUR_RETURN) + SURFACE_SERVE_ADJ[surface]
+        return float(np.clip(p, 0.45, 0.85))
+
+
+def make_world(n_players: int, rng: np.random.Generator) -> DemoWorld:
+    combos = [a + b for a in _SYLLABLES for b in _SYLLABLES if a != b]
+    picks = rng.choice(len(combos), size=n_players, replace=False)
+    names = [f"{_FIRST[k % len(_FIRST)]} {combos[c].capitalize()}" for k, c in enumerate(picks)]
+    serve = np.clip(rng.normal(TOUR_SERVE, 0.03, n_players), 0.55, 0.75)
+    ret = np.clip(rng.normal(TOUR_RETURN, 0.025, n_players), 0.28, 0.45)
+    return DemoWorld(names, serve, ret)
+
+
+def build_demo_dataset(
+    out_dir: Path,
+    prob_a_factory: Callable[[float, float, MatchFormat], Callable[[ScoreState], float]],
+    n_players: int = 48,
+    matches_per_slam: int = 24,
+    seed: int = 2023,
+    market_skill_sd: float = 0.01,
+    form_sd: float = 0.015,
+) -> dict:
+    """Write a complete synthetic dataset in upstream formats under ``out_dir``.
+
+    * ``atp/atp_matches_2022.csv``, ``atp/atp_matches_2023.csv``: weekly bo3 events plus
+      the slams, simulated from latent skills.
+    * ``slam/2023-<slam>-points.csv`` (+ matches): target matches, point by point.
+    * ``betfair/<market>.bz2``: one MATCH_ODDS market per target match.
+
+    Each target match has "form" noise (N(0, form_sd) on each serve rate) that the
+    historical stats cannot see. The market sees the true rates with error
+    N(0, market_skill_sd), so the market should be hard to beat. That is the honest
+    null this demo is built to reproduce.
+    """
+    rng = np.random.default_rng(seed)
+    world = make_world(n_players, rng)
+    fmt_bo3 = MatchFormat(3, "tiebreak")
+    atp_rows: dict[int, list] = {2022: [], 2023: []}
+
+    def play(i, j, surface, fmt, mid, form=(0.0, 0.0)):
+        pa = world.p_serve(i, j, surface) + form[0]
+        pb = world.p_serve(j, i, surface) + form[1]
+        return simulate_match(mid, world.names[i], world.names[j], pa, pb, fmt, rng), pa, pb
+
+    # Weekly tour events (bo3), skipping slam fortnights.
+    week = datetime(2022, 1, 3)
+    slam_weeks = {d + timedelta(days=7 * k) for d in SLAMS_2023.values() for k in (0, 1)}
+    slam_weeks |= {d.replace(year=2022) for d in SLAMS_2023.values()}
+    t_id = 0
+    while week < datetime(2023, 12, 25):
+        if week not in slam_weeks:
+            surface = _surface_for_week(week)
+            tourney = dict(id=f"{week.year}-{t_id:04d}", name=f"Demo Open {t_id}",
+                           surface=surface, level="A", date=week)  # fmt: skip
+            for k in range(16):
+                i, j = rng.choice(n_players, 2, replace=False)
+                m, _, _ = play(i, j, surface, fmt_bo3, f"h{t_id}-{k}")
+                atp_rows[week.year].append(atp_row(m, tourney, k + 1, "R32"))
+            t_id += 1
+        week += timedelta(days=7)
+
+    # 2022 slams go into history only.
+    for slam, start in SLAMS_2023.items():
+        d = start.replace(year=2022)
+        surface = _surface_for_week(d) if slam != "usopen" else "Hard"
+        tourney = dict(id=f"2022-{slam}", name=slam, surface=surface, level="G", date=d)
+        fmt = MatchFormat(5, "advantage" if slam in ("frenchopen",) else "super_tiebreak")
+        for k in range(24):
+            i, j = rng.choice(n_players, 2, replace=False)
+            m, _, _ = play(i, j, surface, fmt, f"s22{slam}-{k}")
+            atp_rows[2022].append(atp_row(m, tourney, k + 1, "R64"))
+
+    # 2023 slams: the target matches.
+    bf_dir = out_dir / "betfair"
+    market_no = 0
+    truth = []
+    for slam, start in SLAMS_2023.items():
+        surface = {"ausopen": "Hard", "frenchopen": "Clay", "wimbledon": "Grass",
+                   "usopen": "Hard"}[slam]  # fmt: skip
+        fmt = MatchFormat(5, "super_tiebreak")
+        tourney = dict(id=f"2023-{slam}", name=slam, surface=surface, level="G", date=start)
+        sims = []
+        for k in range(matches_per_slam):
+            i, j = rng.choice(n_players, 2, replace=False)
+            form = tuple(rng.normal(0, form_sd, 2))
+            mid = f"2023-{slam}-{1101 + k}"
+            m, pa, pb = play(i, j, surface, fmt, mid, form)
+            sims.append(m)
+            atp_rows[2023].append(atp_row(m, tourney, k + 1, "R128"))
+            day = start + timedelta(days=k // 4, hours=11 + 2 * (k % 4))
+            mkt_pa = pa + rng.normal(0, market_skill_sd)
+            mkt_pb = pb + rng.normal(0, market_skill_sd)
+            market_no += 1
+            market_id = f"1.2{market_no:08d}"
+            write_betfair_market(
+                bf_dir / f"{market_id}.bz2", market_id, f"3{market_no:07d}", m,
+                day.replace(tzinfo=UTC), prob_a_factory(mkt_pa, mkt_pb, fmt), rng,
+                (5_000_000 + 2 * market_no, 5_000_001 + 2 * market_no), preplay_minutes=30,
+                noise_sd=0.08,
+            )  # fmt: skip
+            truth.append(dict(match_id=mid, true_pa=pa, true_pb=pb, market_pa=mkt_pa,
+                              market_pb=mkt_pb, winner=m.winner))  # fmt: skip
+        write_slam_files(out_dir / "slam", 2023, slam, sims)
+
+    (out_dir / "atp").mkdir(parents=True, exist_ok=True)
+    for year, rows in atp_rows.items():
+        with (out_dir / "atp" / f"atp_matches_{year}.csv").open("w", newline="") as f:
+            wr = csv.writer(f)
+            wr.writerow(ATP_HEADER)
+            wr.writerows(rows)
+    with (out_dir / "truth.csv").open("w", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=list(truth[0]))
+        wr.writeheader()
+        wr.writerows(truth)
+    return dict(players=n_players, target_matches=len(truth),
+                history_matches=sum(len(r) for r in atp_rows.values()))  # fmt: skip
