@@ -18,7 +18,11 @@ dependencies = [
 betfair = ["betfairlightweight>=2.20"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = [
+    "pybind11>=3.1.0",
+    "pytest>=8",
+    "ruff>=0.5",
+]
 
 [build-system]
 requires = ["hatchling"]
