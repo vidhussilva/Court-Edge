@@ -19,6 +19,10 @@ struct WinProbabilities {
   double match;  // P(A wins the match)
 };
 
+// Throws std::invalid_argument for scores that cannot occur in `fmt`. The engine's
+// tables are indexed by score, so this also keeps lookups in bounds.
+void validate(const ScoreState& state, const MatchFormat& fmt);
+
 // P(server holds) from 0-0, closed form.
 double p_game(double p);
 

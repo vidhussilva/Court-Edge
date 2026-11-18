@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace courtedge {
 
@@ -221,11 +222,32 @@ double MarkovEngine::tiebreak_a(int a, int b, int server, int target) const noex
   return tb_[t][static_cast<size_t>(a)][static_cast<size_t>(b)][static_cast<size_t>(server)];
 }
 
+void validate(const ScoreState& s, const MatchFormat& fmt) {
+  const int need = fmt.sets_to_win();
+  bool ok = s.sets[0] >= 0 && s.sets[1] >= 0 && s.sets[0] < need && s.sets[1] < need &&
+            (s.server == 0 || s.server == 1);
+  const SetRule rule = fmt.set_rule(s.sets[0], s.sets[1]);
+  const int a = s.points[0], b = s.points[1];
+  if (s.tiebreak) {
+    ok = ok && rule.tiebreak_at >= 0 && s.games[0] == rule.tiebreak_at &&
+         s.games[1] == rule.tiebreak_at && a >= 0 && b >= 0 && a <= rule.tiebreak_points &&
+         b <= rule.tiebreak_points;
+  } else {
+    ok = ok && a >= 0 && b >= 0 && a <= 4 && b <= 4 && !(a == 4 && b == 4) &&
+         s.games[0] >= 0 && s.games[1] >= 0;
+    if (rule.tiebreak_at >= 0)
+      ok = ok && std::max(s.games[0], s.games[1]) <= rule.tiebreak_at &&
+           !(s.games[0] == rule.tiebreak_at && s.games[1] == rule.tiebreak_at);
+  }
+  if (!ok) throw std::invalid_argument("invalid score state: " + describe(s));
+}
+
 WinProbabilities MarkovEngine::win_probabilities(const ScoreState& s) const {
   if (s.is_over()) {
     const double v = s.winner == 0 ? 1.0 : 0.0;
     return {v, v, v};
   }
+  validate(s, fmt_);
   const int r = rule_index(s.sets[0], s.sets[1]);
   const SetRule rule = fmt_.set_rule(s.sets[0], s.sets[1]);
   double g;

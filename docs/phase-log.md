@@ -21,3 +21,22 @@ One entry per completed phase: what was built, how it was verified, open issues.
   to 1e-10.
 - Note: the first C++ grid run failed one cell at 3.8 sigma with 100k sims. Checking
   across seeds showed no bias, so the C++ test now uses 400k sims (tolerance at about 6 sigma).
+
+## Phase 2: odds-only backtester (code complete; report on synthetic data)
+
+- Built: ATP serve-point model (52-week, surface shrinkage, Barnett-Clarke opponent
+  adjustment, "tournament must have finished" date guard); de-vig (multiplicative +
+  power); flat and capped fractional Kelly; event-driven backtester with delay, slippage
+  ticks and per-market commission from `marketBaseRate`; metrics with match-level
+  bootstrap; C++ backtest loop with thread-pool runner and pybind11 adapter; synthetic
+  demo world in upstream file formats.
+- Verified: look-ahead perturbation tests (Python and C++); hand-calculated P&L cases;
+  Python/C++ backtest parity on three configs; ATP no-future guard test.
+- Result (SYNTHETIC): the delayed stats model is worse than the market on Brier
+  (+0.0215, 95% CI [-0.0002, 0.0455]) and ROI is indistinguishable from zero. That is the
+  expected null, since the demo market knows each match's form.
+- Performance: report generation went from 37 s to 4 s after replacing DataFrame-concat
+  bootstrap resampling with per-match sums.
+- Open: regenerate `reports/phase2.md` from real Betfair data. Commission is read per
+  market from the files; sources disagree on Betfair's headline rate, so the 5% fallback
+  should be checked against a market's Rules tab.

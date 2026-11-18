@@ -23,8 +23,7 @@ FIX = Path(__file__).parent / "fixtures"
 T = pd.Timestamp("2023-07-16 15:00", tz="UTC")
 
 
-@pytest.fixture(scope="module")
-def match_input() -> MatchInput:
+def _fixture_input() -> MatchInput:
     points, matches = pbp.load_slam(FIX / "slam" / "2023-wimbledon-points.csv")
     bf = betfair.parse_path(FIX / "betfair")
     cat, _ = build_catalogue(matches, market_summary(bf))
@@ -32,6 +31,11 @@ def match_input() -> MatchInput:
     inputs, info = build_inputs(cat, matches, points, bf, serve)
     assert info.used.all()
     return inputs[0]
+
+
+@pytest.fixture(scope="module")
+def match_input() -> MatchInput:
+    return _fixture_input()
 
 
 # A low threshold and no spacing, so the fixture produces plenty of bets.

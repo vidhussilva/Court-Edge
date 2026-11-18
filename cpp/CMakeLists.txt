@@ -21,6 +21,8 @@ add_library(courtedge_core
   src/score.cpp
   src/markov.cpp
   src/simulate.cpp
+  src/market.cpp
+  src/backtest.cpp
 )
 target_include_directories(courtedge_core PUBLIC include)
 find_package(Threads REQUIRED)
@@ -45,6 +47,7 @@ if(COURTEDGE_BUILD_TESTS)
     tests/test_version.cpp
     tests/test_score.cpp
     tests/test_markov.cpp
+    tests/test_backtest.cpp
   )
   target_link_libraries(courtedge_tests PRIVATE courtedge_core GTest::gtest_main)
   include(GoogleTest)
@@ -60,7 +63,7 @@ if(COURTEDGE_BUILD_BENCH)
     set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(benchmark)
   endif()
-  add_executable(courtedge_bench bench/bench_markov.cpp)
+  add_executable(courtedge_bench bench/bench_markov.cpp bench/bench_backtest.cpp)
   target_link_libraries(courtedge_bench PRIVATE courtedge_core benchmark::benchmark_main)
 endif()
 

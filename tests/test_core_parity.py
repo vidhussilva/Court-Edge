@@ -49,3 +49,37 @@ def test_simulate_binding_releases_gil_and_agrees():
     mc = core.simulate(core.ScoreState(), 0.65, 0.62, fmt, n=200_000, seed=1, threads=2)
     exact = core.MarkovEngine(0.65, 0.62, fmt).p_match()
     assert mc.match == pytest.approx(exact, abs=0.005)
+
+
+def test_backtest_parity_python_vs_cpp():
+    """Same inputs, same config: identical bets and P&L, predictions to 1e-10."""
+    from dataclasses import replace
+
+    from courtedge.market import fast
+    from courtedge.market.backtest import BacktestConfig, run_backtest
+    from courtedge.market.staking import StakingConfig
+    from tests.test_backtest import _fixture_input
+
+    m = _fixture_input()
+    for cfg in [
+        BacktestConfig(delay_s=120, threshold=0.02, min_gap_s=0, max_bets=1000),
+        BacktestConfig(
+            delay_s=0,
+            threshold=0.03,
+            slippage_ticks=2,
+            staking=StakingConfig("kelly", kelly_cap=0.5),
+        ),  # fmt: skip
+        BacktestConfig(delay_s=300, threshold=0.01, min_gap_s=600, trade_preplay=True),
+    ]:
+        inputs = [m, replace(m, match_id="copy", pa=0.62, pb=0.7, market_base_rate=2.0)]
+        p_py, b_py, r_py = run_backtest(inputs, cfg)
+        p_c, b_c, r_c = fast.run_backtest_fast(inputs, cfg, threads=2)
+        assert len(b_py) > 0
+        np.testing.assert_allclose(p_c.model_match, p_py.model_match, atol=1e-10)
+        np.testing.assert_allclose(p_c.market_p, p_py.market_p, atol=1e-12)
+        assert (p_c.known_points.to_numpy() == p_py.known_points.to_numpy()).all()
+        assert list(b_c.side) == list(b_py.side)
+        assert list(b_c.time_utc) == list(b_py.time_utc)
+        np.testing.assert_allclose(b_c.odds, b_py.odds, atol=1e-9)
+        np.testing.assert_allclose(b_c.stake, b_py.stake, atol=1e-12)
+        np.testing.assert_allclose(r_c.net, r_py.net, atol=1e-9)
