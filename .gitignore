@@ -3,7 +3,7 @@ data/raw/*
 !data/raw/.gitkeep
 data/interim/*
 *.bz2
-!tests/fixtures/*.bz2
+!tests/fixtures/**/*.bz2
 *.mp4
 *.mkv
 
