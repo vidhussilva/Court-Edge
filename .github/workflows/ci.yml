@@ -12,6 +12,13 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - run: uv python install 3.11
       - run: uv sync --all-groups
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Build the C++ extension so parity tests run
+        run: |
+          uv run cmake -S cpp -B build -G Ninja -DCOURTEDGE_BUILD_PYTHON=ON \
+            -DCOURTEDGE_BUILD_TESTS=OFF -DCOURTEDGE_BUILD_BENCH=OFF \
+            -DPython_EXECUTABLE=$(uv run which python)
+          cmake --build build
       - run: uv run ruff check src tests scripts
       - run: uv run pytest -q   # includes the ~40 s Monte Carlo grid
 
@@ -23,3 +30,4 @@ jobs:
       - run: cmake -S cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
+      - run: ./build/courtedge_bench --benchmark_min_time=0.1s
