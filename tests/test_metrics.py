@@ -4,6 +4,7 @@ import pytest
 
 from courtedge.report.metrics import (
     bootstrap_by_group,
+    bootstrap_ratio,
     brier,
     calibration_table,
     expected_calibration_error,
@@ -30,3 +31,21 @@ def test_bootstrap_resamples_groups():
     assert est == pytest.approx(14.5) and lo < est < hi
     # Group-level resampling: the CI reflects 30 groups, not 300 rows.
     assert hi - lo > 4
+
+
+def test_bootstrap_ratio_matches_generic_bootstrap():
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame({"g": rng.integers(0, 40, 2000), "x": rng.normal(size=2000)})
+    est_fast, lo_fast, hi_fast = bootstrap_ratio(df.x, np.ones(len(df)), df.g, n=2000, seed=3)
+    est, lo, hi = bootstrap_by_group(df, "g", lambda d: d.x.mean(), n=400, seed=3)
+    assert est_fast == pytest.approx(est)
+    # Different random draws, same sampling distribution.
+    assert lo_fast == pytest.approx(lo, abs=0.03) and hi_fast == pytest.approx(hi, abs=0.03)
+
+
+def test_bootstrap_ratio_roi():
+    net = np.array([5.0, -10.0, 2.0])
+    staked = np.array([10.0, 10.0, 4.0])
+    est, lo, hi = bootstrap_ratio(net, staked, ["a", "b", "c"], n=200)
+    assert est == pytest.approx(-3 / 24)
+    assert lo <= est <= hi

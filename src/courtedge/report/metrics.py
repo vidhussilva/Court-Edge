@@ -66,3 +66,44 @@ def bootstrap_by_group(
         draws[i] = stat(pd.concat([parts[g] for g in pick], ignore_index=True))
     lo, hi = np.nanquantile(draws, [alpha / 2, 1 - alpha / 2])
     return float(point), float(lo), float(hi)
+
+
+def bootstrap_ratio(
+    num: np.ndarray,
+    den: np.ndarray,
+    groups: np.ndarray,
+    n: int = 1000,
+    seed: int = 0,
+    alpha: float = 0.05,
+) -> tuple[float, float, float]:
+    """Bootstrap of sum(num) / sum(den) with whole groups resampled.
+
+    Covers every statistic in the reports: a mean is num = values, den = 1 per row
+    (Brier, log loss, Brier difference), and ROI is num = net, den = staked per
+    match. Collapsing to per-group sums first makes 1,000 resamples take milliseconds
+    instead of rebuilding a DataFrame each time.
+    """
+    num, den = np.asarray(num, float), np.asarray(den, float)
+    keys, inv = np.unique(np.asarray(groups), return_inverse=True)
+    g_num = np.bincount(inv, weights=num, minlength=len(keys))
+    g_den = np.bincount(inv, weights=den, minlength=len(keys))
+    point = g_num.sum() / g_den.sum() if g_den.sum() else np.nan
+    if len(keys) < 2:
+        return float(point), np.nan, np.nan
+    rng = np.random.default_rng(seed)
+    pick = rng.integers(len(keys), size=(n, len(keys)))
+    d = g_den[pick].sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        draws = g_num[pick].sum(axis=1) / d
+    lo, hi = np.nanquantile(draws, [alpha / 2, 1 - alpha / 2])
+    return float(point), float(lo), float(hi)
+
+
+def row_brier(p, y) -> np.ndarray:
+    return (np.asarray(p, float) - np.asarray(y, float)) ** 2
+
+
+def row_log_loss(p, y) -> np.ndarray:
+    p = np.clip(np.asarray(p, float), _EPS, 1 - _EPS)
+    y = np.asarray(y, float)
+    return -(y * np.log(p) + (1 - y) * np.log(1 - p))

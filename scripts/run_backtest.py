@@ -20,57 +20,46 @@ import yaml
 
 from courtedge.data import atp
 from courtedge.data.catalogue import load_catalogue
+from courtedge.market import fast
 from courtedge.market.backtest import DEFAULT_COMMISSION, BacktestConfig, run_backtest
 from courtedge.market.inputs import build_inputs
 from courtedge.report import plots
 from courtedge.report.metrics import (
-    bootstrap_by_group,
+    bootstrap_ratio,
     brier,
     calibration_table,
     expected_calibration_error,
-    log_loss,
+    row_brier,
+    row_log_loss,
 )
 
 
 def score_table(preds: pd.DataFrame, n_boot: int, seed: int) -> pd.DataFrame:
     """Brier and log loss for model and market with match-level bootstrap CIs."""
     rows = []
-    for name, col in [
-        ("Market (de-vigged LTP)", "market_p"),
-        ("Model (Markov, delayed)", "model_match"),
-    ]:
-        for metric, fn in [("Brier", brier), ("Log loss", log_loss)]:
-            est, lo, hi = bootstrap_by_group(
-                preds, "match_id", lambda d, c=col, f=fn: f(d[c], d["outcome"]), n_boot, seed
-            )
+    g, y, ones = preds["match_id"].to_numpy(), preds["outcome"], np.ones(len(preds))
+    forecasts = [("Market (de-vigged LTP)", "market_p"), ("Model (Markov, delayed)", "model_match")]
+    for name, col in forecasts:
+        for metric, fn in [("Brier", row_brier), ("Log loss", row_log_loss)]:
+            est, lo, hi = bootstrap_ratio(fn(preds[col], y), ones, g, n_boot, seed)
             rows.append(dict(forecast=name, metric=metric, value=est, lo=lo, hi=hi))
-    diff = bootstrap_by_group(
-        preds,
-        "match_id",
-        lambda d: brier(d.model_match, d.outcome) - brier(d.market_p, d.outcome),
-        n_boot,
-        seed,
-    )
-    rows.append(
-        dict(forecast="Model - market", metric="Brier", value=diff[0], lo=diff[1], hi=diff[2])
-    )
+    diff = row_brier(preds.model_match, y) - row_brier(preds.market_p, y)
+    est, lo, hi = bootstrap_ratio(diff, ones, g, n_boot, seed)
+    rows.append(dict(forecast="Model - market", metric="Brier", value=est, lo=lo, hi=hi))
     return pd.DataFrame(rows)
 
 
 def pnl_summary(results: pd.DataFrame, n_boot: int, seed: int) -> dict:
-    staked = results["staked"].sum()
-    roi = lambda d: d["net"].sum() / d["staked"].sum() if d["staked"].sum() > 0 else np.nan  # noqa: E731
-    est, lo, hi = bootstrap_by_group(results, "match_id", roi, n_boot, seed)
+    est, lo, hi = bootstrap_ratio(results["net"], results["staked"], results["match_id"],
+                                  n_boot, seed)  # fmt: skip
     return dict(
         n_bets=int(results["n_bets"].sum()),
         matches_with_bets=int((results.n_bets > 0).sum()),
-        staked=float(staked),
+        staked=float(results["staked"].sum()),
         net=float(results["net"].sum()),
         commission=float(results["commission"].sum()),
-        roi=est,
-        roi_lo=lo,
-        roi_hi=hi,
-    )
+        roi=est, roi_lo=lo, roi_hi=hi,
+    )  # fmt: skip
 
 
 def calibration_figure(preds: pd.DataFrame, path: Path, title: str) -> Path:
@@ -142,6 +131,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--report", default="reports/phase2.md")
     ap.add_argument("--synthetic", action="store_true", help="label every output SYNTHETIC")
     ap.add_argument("--truth", help="demo truth.csv, adds a serve-estimate diagnostic")
+    ap.add_argument(
+        "--engine",
+        choices=["auto", "cpp", "python"],
+        default="auto",
+        help="auto = C++ core when built (identical results, ~100x faster)",
+    )
     args = ap.parse_args(argv)
 
     conf = yaml.safe_load(Path(args.config).read_text())
@@ -164,7 +159,11 @@ def main(argv: list[str] | None = None) -> None:
     serve.to_parquet(interim / "serve_probs.parquet", index=False)
 
     inputs, info = build_inputs(catalogue, matches, points, bf, serve)
-    preds, bets, results = run_backtest(inputs, cfg)
+    use_cpp = args.engine == "cpp" or (args.engine == "auto" and fast.available())
+    if use_cpp:
+        preds, bets, results = fast.run_backtest_fast(inputs, cfg)
+    else:
+        preds, bets, results = run_backtest(inputs, cfg)
     results["winner"] = [m.winner for m in inputs]
     for name, df in [("predictions", preds), ("bets", bets), ("results", results)]:
         df.to_parquet(interim / f"{stem}_{name}.parquet", index=False)
@@ -209,7 +208,8 @@ def main(argv: list[str] | None = None) -> None:
         f"- Commission: per-market `marketBaseRate` from the Betfair files "
         f"(range {min(rates):.1%}-{max(rates):.1%}; fallback {DEFAULT_COMMISSION:.0%}). It is "
         "charged on net market winnings.",
-        f"- Bootstrap: {n_boot} resamples of whole matches.",
+        f"- Bootstrap: {n_boot} resamples of whole matches. Backtest engine: "
+        f"{'C++ core' if use_cpp else 'Python'}.",
         "",
         "## Forecast accuracy (in-play, P(A wins match))",
         "",
