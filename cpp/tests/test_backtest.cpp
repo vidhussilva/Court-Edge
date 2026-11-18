@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
 
 #include "courtedge/backtest.hpp"
