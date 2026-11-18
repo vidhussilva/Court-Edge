@@ -13,7 +13,7 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync --all-groups
       - run: uv run ruff check src tests scripts
-      - run: uv run pytest -q -m "not slow"
+      - run: uv run pytest -q   # includes the ~40 s Monte Carlo grid
 
   cpp:
     runs-on: ubuntu-latest
