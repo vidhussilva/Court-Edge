@@ -33,7 +33,8 @@ SLAM_MONTHS = {
 CATALOGUE_COLUMNS = [
     "match_id", "source", "tournament", "date", "player_a", "player_b", "best_of",
     "final_set", "market_id", "event_name", "selection_a", "selection_b", "market_time",
-    "inplay_start_utc", "market_end_utc", "match_confidence", "video_path", "video_offset_s",
+    "inplay_start_utc", "market_end_utc", "market_base_rate", "match_confidence", "video_path",
+    "video_offset_s",
 ]  # fmt: skip
 
 
@@ -80,8 +81,14 @@ def market_summary(betfair_long: pd.DataFrame) -> pd.DataFrame:
             continue
         ip = g.loc[g["in_play"], "timestamp_utc"]
         inplay_start = ip.min() if len(ip) else pd.NaT
-        after = g[(g["timestamp_utc"] >= inplay_start) & g["market_status"].isin(
-            ["SUSPENDED", "CLOSED"])] if len(ip) else g.iloc[0:0]
+        after = (
+            g[
+                (g["timestamp_utc"] >= inplay_start)
+                & g["market_status"].isin(["SUSPENDED", "CLOSED"])
+            ]
+            if len(ip)
+            else g.iloc[0:0]
+        )
         end = after["timestamp_utc"].min() if len(after) else g["timestamp_utc"].max()
         rows.append(
             dict(
@@ -90,6 +97,8 @@ def market_summary(betfair_long: pd.DataFrame) -> pd.DataFrame:
                 sel_1=int(runners.iloc[0, 0]), name_1=runners.iloc[0, 1],
                 sel_2=int(runners.iloc[1, 0]), name_2=runners.iloc[1, 1],
                 inplay_start_utc=inplay_start, market_end_utc=end,
+                market_base_rate=g["market_base_rate"].dropna().iloc[-1]
+                if g["market_base_rate"].notna().any() else None,
             )
         )  # fmt: skip
     return pd.DataFrame(rows)
@@ -129,7 +138,8 @@ def build_catalogue(
                 best_of=m.best_of, final_set=m.final_set, market_id=k.market_id,
                 event_name=k.event_name, selection_a=sel_a, selection_b=sel_b,
                 market_time=k.market_time, inplay_start_utc=k.inplay_start_utc,
-                market_end_utc=k.market_end_utc, match_confidence=round(conf, 3),
+                market_end_utc=k.market_end_utc, market_base_rate=k.market_base_rate,
+                match_confidence=round(conf, 3),
                 video_path="", video_offset_s=pd.NA,
             )
         )  # fmt: skip
