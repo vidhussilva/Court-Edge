@@ -102,9 +102,7 @@ def _with(t: tuple[int, int], idx: int, value: int) -> tuple[int, int]:
 
 
 def _start_set(state: ScoreState, fmt: MatchFormat, next_server: int) -> ScoreState:
-    return replace(
-        state, games=(0, 0), points=(0, 0), server=next_server, tiebreak=False
-    )
+    return replace(state, games=(0, 0), points=(0, 0), server=next_server, tiebreak=False)
 
 
 def _game_won(state: ScoreState, fmt: MatchFormat, w: int, last_server: int) -> ScoreState:

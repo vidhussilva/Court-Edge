@@ -20,6 +20,7 @@ jobs:
             -DPython_EXECUTABLE=$(uv run which python)
           cmake --build build
       - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
       - run: uv run pytest -q   # includes the ~40 s Monte Carlo grid
 
   cpp:

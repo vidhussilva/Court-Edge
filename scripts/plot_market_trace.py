@@ -1,6 +1,6 @@
 """Plot the de-vigged market probability for one match, with set scores marked.
 
-    uv run python scripts/plot_market_trace.py --market-id 1.216000001
+uv run python scripts/plot_market_trace.py --market-id 1.216000001
 """
 
 from __future__ import annotations

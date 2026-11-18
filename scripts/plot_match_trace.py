@@ -46,8 +46,11 @@ def main(argv: list[str] | None = None) -> Path:
 
     interim = Path(args.interim)
     matches = pd.read_parquet(interim / "matches.parquet")
-    m = matches.iloc[0] if args.match_id is None else matches.set_index("match_id").loc[
-        args.match_id].rename(args.match_id)
+    m = (
+        matches.iloc[0]
+        if args.match_id is None
+        else matches.set_index("match_id").loc[args.match_id].rename(args.match_id)
+    )
     match_id = m.name if args.match_id else m.match_id
     pa, pb = args.pa, args.pb
     sp = interim / "serve_probs.parquet"
