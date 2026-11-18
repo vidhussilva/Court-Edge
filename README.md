@@ -293,7 +293,7 @@ With real data:
 ```bash
 scripts/download_data.sh  # Sackmann repos into data/raw/
 # Betfair BASIC tennis files (free account at historicdata.betfair.com) into data/raw/betfair/
-just data markov backtest
+just data backtest   # then: just markov
 ```
 
 No GoogleTest or Google Benchmark installed? CMake fetches them. See
