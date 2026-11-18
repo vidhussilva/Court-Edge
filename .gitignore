@@ -1,0 +1,29 @@
+# data — never commit footage, Betfair files or bulk CSVs
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+*.bz2
+!tests/fixtures/*.bz2
+*.mp4
+*.mkv
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+# c++
+build/
+cmake-build-*/
+src/courtedge/_core*.so
+compile_commands.json
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+!data/interim/.gitkeep
